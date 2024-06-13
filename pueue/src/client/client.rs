@@ -131,6 +131,7 @@ impl Client {
             json: false,
             group: None,
             query: Vec::new(),
+            count: false,
         });
 
         Ok(Client {

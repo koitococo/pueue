@@ -366,6 +366,10 @@ https://github.com/Nukesor/pueue/issues/350#issue-1359083118"
         #[arg(short, long)]
         /// Only show tasks of a specific group
         group: Option<String>,
+
+        #[arg(short, long)]
+        /// Only show counts of tasks in each state, can be used in shell prompts, conflicts with json
+        count: bool,
     },
 
     #[command(

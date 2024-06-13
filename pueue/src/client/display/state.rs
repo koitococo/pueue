@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use pueue_lib::settings::Settings;
 use pueue_lib::state::{State, PUEUE_DEFAULT_GROUP};
-use pueue_lib::task::Task;
+use pueue_lib::task::{Task, TaskResult, TaskStatus};
 
 use super::{helper::*, table_builder::TableBuilder, OutputStyle};
 use crate::client::cli::SubCommand;
@@ -23,9 +23,14 @@ pub fn print_state(
 ) -> Result<String> {
     let mut output = String::new();
 
-    let (json, group_only, query) = match cli_command {
-        SubCommand::Status { json, group, query } => (*json, group.clone(), Some(query)),
-        SubCommand::FormatStatus { group } => (false, group.clone(), None),
+    let (json, group_only, query, count) = match cli_command {
+        SubCommand::Status {
+            json,
+            group,
+            query,
+            count,
+        } => (*json, group.clone(), Some(query), *count),
+        SubCommand::FormatStatus { group } => (false, group.clone(), None, false),
         _ => panic!("Got wrong Subcommand {cli_command:?} in print_state. This shouldn't happen!"),
     };
 
@@ -45,6 +50,36 @@ pub fn print_state(
             state.tasks = tasks.into_iter().map(|task| (task.id, task)).collect();
         }
         output.push_str(&serde_json::to_string(&state).unwrap());
+        return Ok(output);
+    }
+
+    if count {
+        let status_labels = [
+            "Queued",
+            "Stashed",
+            "Running",
+            "Paused",
+            "Success",
+            "Failed",
+            "Locked",
+        ];
+        let mut counts = [0;7];
+        for task in tasks {
+            match task.status {
+                TaskStatus::Queued => counts[0] += 1,
+                TaskStatus::Stashed{..} => counts[1] += 1,
+                TaskStatus::Running => counts[2] += 1,
+                TaskStatus::Paused => counts[3] += 1,
+                TaskStatus::Done(TaskResult::Success) => counts[4] += 1,
+                TaskStatus::Done(_) => counts[5] += 1,
+                TaskStatus::Locked => counts[6] += 1
+            }
+        }
+        for i in 0..7 {
+            if counts[i] > 0 {
+                output.push_str(&format!("{}:{} ", status_labels[i], counts[i]));
+            }
+        }
         return Ok(output);
     }
 
