@@ -21,6 +21,22 @@ macro_rules! impl_into_message {
     };
 }
 
+/// Macro to simplify creating success_messages
+#[macro_export]
+macro_rules! success_msg {
+    ($($arg:tt)*) => {{
+        create_success_message(format!($($arg)*))
+    }}
+}
+
+/// Macro to simplify creating failure_messages
+#[macro_export]
+macro_rules! failure_msg {
+    ($($arg:tt)*) => {{
+        create_failure_message(format!($($arg)*))
+    }}
+}
+
 /// This is the main message enum. \
 /// Everything that's send between the daemon and a client can be represented by this enum.
 #[derive(PartialEq, Eq, Clone, Debug, Deserialize, Serialize)]
@@ -264,7 +280,17 @@ pub struct GroupResponseMessage {
 impl_into_message!(GroupResponseMessage, Message::GroupResponse);
 
 #[derive(PartialEq, Eq, Clone, Debug, Deserialize, Serialize)]
-pub struct ResetMessage {}
+pub enum ResetTarget {
+    // Reset all groups
+    All,
+    // Reset a list of specific groups
+    Groups(Vec<String>),
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Deserialize, Serialize)]
+pub struct ResetMessage {
+    pub target: ResetTarget,
+}
 
 impl_into_message!(ResetMessage, Message::Reset);
 
@@ -300,12 +326,12 @@ impl_into_message!(StreamRequestMessage, Message::StreamRequest);
 
 /// Request logs for specific tasks.
 ///
-/// `task_ids` specifies the requested tasks. If none are given, all tasks are selected.
+/// `tasks` specifies the requested tasks.
 /// `send_logs` Determines whether logs should be sent at all.
 /// `lines` Determines whether only a few lines of log should be returned.
 #[derive(PartialEq, Eq, Clone, Debug, Deserialize, Serialize)]
 pub struct LogRequestMessage {
-    pub task_ids: Vec<usize>,
+    pub tasks: TaskSelection,
     pub send_logs: bool,
     pub lines: Option<usize>,
 }

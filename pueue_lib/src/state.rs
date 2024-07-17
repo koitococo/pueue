@@ -1,9 +1,12 @@
 use std::collections::BTreeMap;
+use std::process::Child;
 use std::sync::{Arc, Mutex};
 
 use serde_derive::{Deserialize, Serialize};
 
+use crate::children::Children;
 use crate::error::Error;
+use crate::network::message::Shutdown;
 use crate::task::{Task, TaskStatus};
 
 pub const PUEUE_DEFAULT_GROUP: &str = "default";
@@ -16,6 +19,9 @@ pub type SharedState = Arc<Mutex<State>>;
 pub enum GroupStatus {
     Running,
     Paused,
+    // This state is set, if this group is being reset.
+    // This means that all tasks are being killed and removed.
+    Reset,
 }
 
 /// The representation of a group.
@@ -48,17 +54,45 @@ pub struct Group {
 /// The daemon uses the state as a piece of shared memory between it's threads.
 /// It's wrapped in a MutexGuard, which allows us to guarantee sequential access to any crucial
 /// information, such as status changes and incoming commands by the client.
-#[derive(PartialEq, Eq, Clone, Debug, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub struct State {
     /// All tasks currently managed by the daemon.
     pub tasks: BTreeMap<usize, Task>,
     /// All groups with their current state a configuration.
     pub groups: BTreeMap<String, Group>,
+    /// Whether we're currently in the process of a graceful shutdown.
+    /// Depending on the shutdown type, we're exiting with different exitcodes.
+    /// This is runtime state and won't be serialised to disk.
+    #[serde(default, skip)]
+    pub shutdown: Option<Shutdown>,
+
+    /// Pueue's subprocess and worker pool representation.
+    /// Take a look at [Children] for more info.
+    /// This is runtime state and won't be serialised to disk.
+    #[serde(default, skip)]
+    pub children: Children,
+    /// These are the currently running callbacks. They're usually very short-lived.
+    #[serde(default, skip)]
+    pub callbacks: Vec<Child>,
 }
 
-impl Default for State {
-    fn default() -> Self {
-        Self::new()
+// Implement a custom Clone, as the child processes don't implement Clone.
+impl Clone for State {
+    fn clone(&self) -> Self {
+        State {
+            tasks: self.tasks.clone(),
+            groups: self.groups.clone(),
+            shutdown: self.shutdown.clone(),
+            ..Default::default()
+        }
+    }
+}
+
+// Implement a custom PartialEq, as the child processes don't ipmlement PartialEq.
+impl Eq for State {}
+impl PartialEq for State {
+    fn eq(&self, other: &Self) -> bool {
+        self.tasks == other.tasks && self.groups == other.groups && self.shutdown == other.shutdown
     }
 }
 
@@ -76,6 +110,7 @@ impl State {
         let mut state = State {
             tasks: BTreeMap::new(),
             groups: BTreeMap::new(),
+            ..Default::default()
         };
         state.create_group(PUEUE_DEFAULT_GROUP);
         state

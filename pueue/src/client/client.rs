@@ -174,13 +174,23 @@ impl Client {
     async fn handle_complex_command(&mut self) -> Result<bool> {
         // This match handles all "complex" commands.
         match &self.subcommand {
-            SubCommand::Reset { force, .. } => {
+            SubCommand::Reset { force, groups } => {
                 // Get the current state and check if there're any running tasks.
                 // If there are, ask the user if they really want to reset the state.
                 let state = get_state(&mut self.stream).await?;
+
+                // Get the groups that should be reset.
+                let groups: Vec<String> = if groups.is_empty() {
+                    state.groups.keys().cloned().collect()
+                } else {
+                    groups.clone()
+                };
+
+                // Check if there're any running tasks for that group
                 let running_tasks = state
                     .tasks
                     .iter()
+                    .filter(|(_id, task)| groups.contains(&task.group))
                     .filter_map(|(id, task)| if task.is_running() { Some(*id) } else { None })
                     .collect::<Vec<_>>();
 
@@ -518,13 +528,16 @@ impl Client {
             SubCommand::Log {
                 task_ids,
                 lines,
+                group,
                 full,
+                all,
                 ..
             } => {
                 let lines = determine_log_line_amount(*full, lines);
+                let selection = selection_from_params(*all, group, task_ids);
 
                 let message = LogRequestMessage {
-                    task_ids: task_ids.clone(),
+                    tasks: selection,
                     send_logs: !self.settings.client.read_local_logs,
                     lines,
                 };
@@ -543,12 +556,18 @@ impl Client {
                 group: group.clone(),
             }
             .into(),
-            SubCommand::Reset { force, .. } => {
+            SubCommand::Reset { force, groups, .. } => {
                 if self.settings.client.show_confirmation_questions && !force {
                     self.handle_user_confirmation("reset", &Vec::new())?;
                 }
 
-                ResetMessage {}.into()
+                let target = if groups.is_empty() {
+                    ResetTarget::All
+                } else {
+                    ResetTarget::Groups(groups.clone())
+                };
+
+                ResetMessage { target }.into()
             }
             SubCommand::Shutdown => Shutdown::Graceful.into(),
             SubCommand::Parallel {

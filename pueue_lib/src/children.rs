@@ -6,12 +6,23 @@ use std::collections::BTreeMap;
 ///
 /// The datastructure represents the following data:
 /// BTreeMap<group_name, BTreeMap<group_worker_id, (task_id, subprocess_handle)>
+#[derive(Debug, Default)]
 pub struct Children(pub BTreeMap<String, BTreeMap<usize, (usize, GroupChild)>>);
 
 impl Children {
     /// Returns whether there are any active tasks across all groups.
     pub fn has_active_tasks(&self) -> bool {
         self.0.iter().any(|(_, pool)| !pool.is_empty())
+    }
+
+    /// Returns whether there are any active tasks for the given group.
+    ///
+    /// Returns `false` if the group cannot be found.
+    pub fn has_group_active_tasks(&self, group: &str) -> bool {
+        self.0
+            .get(group)
+            .map(|pool| !pool.is_empty())
+            .unwrap_or(false)
     }
 
     /// A convenience function to check whether there's child with a given task_id.

@@ -1,12 +1,35 @@
-# Changelog
+Changelog
 
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## \[Unreleased\]
+## \[4.0.0\] - unreleased
 
-### Added
+Up until recently, Pueue had the subprocesses' (tasks') state live in a dedicated thread.
+Client commands that directly affected subprocesses, such as `pueue start --immediate`, were forwarded to that special thread via an `mpsc` channel to be further processed.
+
+This approach resulted in short delays until such commands would actually be processed.
+For instance, tasks would start a few hundred milliseconds after the client got the `Ok` from the daemon that the task is about to start.
+Commands like `pueue add --immediate install_something && pueue send 0 'y\n'` would often fail as the task didn't start yet.
+
+The new state design fixes this issue, which allows Pueue to do subprocess state manipulation directly inside of the client message handlers, effectively removing any delays.
+
+### Fixed
+
+- Fixed delay after sending process related commands from client. [#548](https://github.com/Nukesor/pueue/pull/548)
+
+### Change
+
+- **Breaking**: Streamlined `pueue log` parameters to behave the same way was `start`, `pause` or `kill`. [#509](https://github.com/Nukesor/pueue/issues/509)
+- **Breaking**: Remove the `--children` commandline flags, that have been deprecated and no longer serve any function since `v3.0.0`.
+
+### Add
+
+- Add `--all` and `--group` to `pueue log`. [#509](https://github.com/Nukesor/pueue/issues/509)
+- Add `pueue reset --groups [group_names]` to allow resetting individual groups. [#482](https://github.com/Nukesor/pueue/issues/482) \
+  This also refactors the way resets are done internally, resulting in a cleaner code architecture.
+- Ability to set the Unix socket permissions through the new `unix_socket_permissions` configuration option. [#544](https://github.com/Nukesor/pueue/pull/544)
 
 ## \[3.4.1\] - 2024-06-04
 
