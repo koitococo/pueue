@@ -26,7 +26,7 @@ pub fn restart_multiple(
     // We have to compile the response beforehand.
     // Otherwise we no longer know which tasks, were actually capable of being being restarted.
     let response = task_action_response_helper(
-        "Tasks restarted",
+        "Tasks has restarted",
         task_ids.clone(),
         |task| task.is_done(),
         &state,
@@ -69,10 +69,10 @@ fn restart(
     // Either enqueue the task or stash it.
     if stashed {
         task.status = TaskStatus::Stashed { enqueue_at: None };
-        task.enqueued_at = None;
     } else {
-        task.status = TaskStatus::Queued;
-        task.enqueued_at = Some(Local::now());
+        task.status = TaskStatus::Queued {
+            enqueued_at: Local::now(),
+        };
     };
 
     // Update command if applicable.
@@ -97,8 +97,4 @@ fn restart(
     if let Some(priority) = to_restart.priority {
         task.priority = priority;
     }
-
-    // Reset all variables of any previous run.
-    task.start = None;
-    task.end = None;
 }

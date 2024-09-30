@@ -13,7 +13,7 @@ use pueue_lib::{
 use super::state_helper::LockedState;
 
 /// Users can specify a callback that's fired whenever a task finishes.
-/// Execute the callback by spawning a new subprocess.
+/// The callback is performed by spawning a new subprocess.
 pub fn spawn_callback(settings: &Settings, state: &mut LockedState, task: &Task) {
     // Return early, if there's no callback specified
     let Some(template_string) = &settings.daemon.callback else {
@@ -55,6 +55,7 @@ pub fn build_callback_command(
     // Init Handlebars. We set to strict, as we want to show an error on missing variables.
     let mut handlebars = Handlebars::new();
     handlebars.set_strict_mode(true);
+    handlebars.register_escape_fn(handlebars::no_escape);
 
     // Add templating variables.
     let mut parameters = HashMap::new();
@@ -64,7 +65,7 @@ pub fn build_callback_command(
     parameters.insert("group", task.group.clone());
 
     // Result takes the TaskResult Enum strings, unless it didn't finish yet.
-    if let TaskStatus::Done(result) = &task.status {
+    if let TaskStatus::Done { result, .. } = &task.status {
         parameters.insert("result", result.to_string());
     } else {
         parameters.insert("result", "None".into());
@@ -75,8 +76,9 @@ pub fn build_callback_command(
         time.map(|time| time.timestamp().to_string())
             .unwrap_or_default()
     };
-    parameters.insert("start", print_time(task.start));
-    parameters.insert("end", print_time(task.end));
+    let (start, end) = task.start_and_end();
+    parameters.insert("start", print_time(start));
+    parameters.insert("end", print_time(end));
 
     // Read the last lines of the process' output and make it available.
     if let Ok(output) = read_last_log_file_lines(
@@ -95,7 +97,7 @@ pub fn build_callback_command(
     parameters.insert("output_path", out_path.display().to_string());
 
     // Get the exit code
-    if let TaskStatus::Done(result) = &task.status {
+    if let TaskStatus::Done { result, .. } = &task.status {
         match result {
             TaskResult::Success => parameters.insert("exit_code", "0".into()),
             TaskResult::Failed(code) => parameters.insert("exit_code", code.to_string()),
@@ -108,8 +110,8 @@ pub fn build_callback_command(
     handlebars.render_template(template_string, &parameters)
 }
 
-/// Look at all running callbacks and log any errors.
-/// If everything went smoothly, simply remove them from the list.
+/// Look at all running callbacks and check if they're still running.
+/// Handle finished callbacks and log their outcome.
 pub fn check_callbacks(state: &mut LockedState) {
     let mut finished = Vec::new();
     for (id, child) in state.callbacks.iter_mut().enumerate() {

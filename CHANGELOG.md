@@ -6,30 +6,66 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## \[4.0.0\] - unreleased
 
-Up until recently, Pueue had the subprocesses' (tasks') state live in a dedicated thread.
-Client commands that directly affected subprocesses, such as `pueue start --immediate`, were forwarded to that special thread via an `mpsc` channel to be further processed.
+This release aims to further improve Pueue and to rectify some old design decisions.
 
-This approach resulted in short delays until such commands would actually be processed.
-For instance, tasks would start a few hundred milliseconds after the client got the `Ok` from the daemon that the task is about to start.
-Commands like `pueue add --immediate install_something && pueue send 0 'y\n'` would often fail as the task didn't start yet.
+### Removing internal channel communication
 
-The new state design fixes this issue, which allows Pueue to do subprocess state manipulation directly inside of the client message handlers, effectively removing any delays.
+Until recently, Pueue managed subprocess (task) states in a dedicated thread.
+Client commands affecting subprocesses, such as `pueue start --immediate`, were relayed to this special thread via an `mpsc` channel for processing.
+
+This setup caused short delays before the instructions were executed.
+For instance, tasks would begin a few hundred milliseconds after the client received an `Ok` from the daemon, despite using the `--immediate` flag.
+This behavior was unintuitive and often led to commands like `pueue add --immediate install_something && pueue send 0 'y\n'` failing, as the task had not started by the time `pueue send` was called.
+
+The new state design resolves this issue by allowing Pueue to manipulate subprocess states directly within the client message handlers, eliminating any delays.
+
+TLDR: Commands that start/stop/kill/pause tasks now only return when the task is actually started/stopped/killed/paused.
+
+### Runtime invariants
+
+Previously, various task-state related invariants were enforced during runtime. For example, a `Queued` task should not have a `start` or `enqueued_at` time set.
+This approach, however, is highly error-prone, as it is difficult to account for every state transition and ensure everything is set or cleaned up correctly.
+
+Fortunately, this issue can be addressed in a more elegant way in Rust using struct enums. This method enforces invariants via the type system at compile time.
+Although the affected code become slightly more verbose (about 25% larger), it eliminated an entire class of bugs.
+During this refactoring, I discovered at least two instances where I had forgotten to clear a variable.
+
+However, since the new structure differs significantly from the old one, it breaks backward compatibility with some commands (such as `status` and `log`) and the serialized state.
+Upon updating Pueue, the previous state will be wiped, resulting in a clean slate.
+
+TLDR: The new task state representation is more verbose but significantly cleaner and fixes some bugs. It breaks compatibility with old states, so ensure there are no important tasks in your queue before updating. You'll also need to recreate groups.
+
+### Change
+
+- **Breaking**: Refactor internal task state. Some task variables have been moved into the `TaskStatus` enum, which now enforces various invariants during compile time via the type system.
+  Due to this, several subtle time related inconsistencies (task start/stop/enqueue times) have been fixed. [#556](https://github.com/Nukesor/pueue/pull/556) \
+  **Important: This completely breaks backwards compatibility, including previous state.**
+  **Important: The Pueue daemon needs to be restarted and the state will be wiped clean.**
+- **Breaking**: Streamlined `pueue log` parameters to behave the same way as `start`, `pause` or `kill`. [#509](https://github.com/Nukesor/pueue/issues/509)
+- **Breaking**: Remove the `--children` commandline flags, that have been deprecated and no longer serve any function since `v3.0.0`.
+- Send log output to `stderr` instead of `stdout` [#562](https://github.com/Nukesor/pueue/issues/562).
+- Change default log level from error to warning [#562](https://github.com/Nukesor/pueue/issues/562).
+- Bumped MSRV to 1.70.
+
+### Add
+
+- Add support for NetBSD.
+- Add `--all` and `--group` to `pueue log`. [#509](https://github.com/Nukesor/pueue/issues/509)
+- Add `--all` and `--group` to `pueue enqueue`. [#558](https://github.com/Nukesor/pueue/issues/558)
+- Add `--all` and `--group` to `pueue stash`. [#558](https://github.com/Nukesor/pueue/issues/558)
+- Add `pueue reset --groups [group_names]` to allow resetting individual groups. [#482](https://github.com/Nukesor/pueue/issues/482) \
+  This also refactors the way resets are done internally, resulting in a cleaner code architecture.
+- Ability to set the Unix socket permissions through the new `unix_socket_permissions` configuration option. [#544](https://github.com/Nukesor/pueue/pull/544)
+- Add `command` filter to `pueue status`. [#524](https://github.com/Nukesor/pueue/issues/524) [#560](https://github.com/Nukesor/pueue/pull/560)
+- Allow `pueue status` to order tasks by `enqueue_at`. [#554](https://github.com/Nukesor/pueue/issues/554)
+- Added Windows service on Windows to allow a true daemon experience. [#344](https://github.com/Nukesor/pueue/issues/344) [#567](https://github.com/Nukesor/pueue/pull/567)
 
 ### Fixed
 
 - Fixed delay after sending process related commands from client. [#548](https://github.com/Nukesor/pueue/pull/548)
-
-### Change
-
-- **Breaking**: Streamlined `pueue log` parameters to behave the same way was `start`, `pause` or `kill`. [#509](https://github.com/Nukesor/pueue/issues/509)
-- **Breaking**: Remove the `--children` commandline flags, that have been deprecated and no longer serve any function since `v3.0.0`.
-
-### Add
-
-- Add `--all` and `--group` to `pueue log`. [#509](https://github.com/Nukesor/pueue/issues/509)
-- Add `pueue reset --groups [group_names]` to allow resetting individual groups. [#482](https://github.com/Nukesor/pueue/issues/482) \
-  This also refactors the way resets are done internally, resulting in a cleaner code architecture.
-- Ability to set the Unix socket permissions through the new `unix_socket_permissions` configuration option. [#544](https://github.com/Nukesor/pueue/pull/544)
+- Callback templating arguments were html escaped by accident. [#564](https://github.com/Nukesor/pueue/pull/564)
+- Print incompatible version warning info as a log message instead of plain stdout input, which broke json outputs [#562](https://github.com/Nukesor/pueue/issues/562).
+- Fixed `-d` daemon mode on Windows. [#344](https://github.com/Nukesor/pueue/issues/344)
 
 ## \[3.4.1\] - 2024-06-04
 

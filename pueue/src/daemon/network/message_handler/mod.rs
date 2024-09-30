@@ -1,5 +1,6 @@
 use std::fmt::Display;
 
+use chrono::{DateTime, Local};
 use pueue_lib::failure_msg;
 use pueue_lib::network::message::*;
 use pueue_lib::settings::Settings;
@@ -24,6 +25,8 @@ mod start;
 mod stash;
 mod switch;
 
+pub use log::follow_log;
+
 pub fn handle_message(message: Message, state: &SharedState, settings: &Settings) -> Message {
     match message {
         Message::Add(message) => add::add_task(settings, state, message),
@@ -31,7 +34,7 @@ pub fn handle_message(message: Message, state: &SharedState, settings: &Settings
         Message::Edit(message) => edit::edit(settings, state, message),
         Message::EditRequest(task_id) => edit::edit_request(state, task_id),
         Message::EditRestore(task_id) => edit::edit_restore(state, task_id),
-        Message::Enqueue(message) => enqueue::enqueue(state, message),
+        Message::Enqueue(message) => enqueue::enqueue(settings, state, message),
         Message::Group(message) => group::group(settings, state, message),
         Message::Kill(message) => kill::kill(settings, state, message),
         Message::Log(message) => log::get_log(settings, state, message),
@@ -42,7 +45,7 @@ pub fn handle_message(message: Message, state: &SharedState, settings: &Settings
         Message::Restart(message) => restart::restart_multiple(settings, state, message),
         Message::Send(message) => send::send(state, message),
         Message::Start(message) => start::start(settings, state, message),
-        Message::Stash(task_ids) => stash::stash(state, task_ids),
+        Message::Stash(message) => stash::stash(settings, state, message),
         Message::Switch(message) => switch::switch(settings, state, message),
         Message::Status => get_status(state),
         _ => create_failure_message("Not yet implemented"),
@@ -54,6 +57,16 @@ pub fn handle_message(message: Message, state: &SharedState, settings: &Settings
 fn get_status(state: &SharedState) -> Message {
     let state = state.lock().unwrap().clone();
     Message::StatusResponse(Box::new(state))
+}
+
+// If the enqueue at time is today, only show the time. Otherwise, include the date.
+fn format_datetime(settings: &Settings, enqueue_at: &DateTime<Local>) -> String {
+    let format_string = if enqueue_at.date_naive() == Local::now().date_naive() {
+        &settings.client.status_time_format
+    } else {
+        &settings.client.status_datetime_format
+    };
+    enqueue_at.format(format_string).to_string()
 }
 
 fn ok_or_failure_message<T, E: Display>(result: Result<T, E>) -> Result<T, Message> {
@@ -75,6 +88,7 @@ macro_rules! ok_or_save_state_failure {
 
 #[cfg(test)]
 mod fixtures {
+    use chrono::{DateTime, Duration, Local};
     use std::collections::HashMap;
     use std::env::temp_dir;
     use std::sync::{Arc, Mutex};
@@ -83,6 +97,15 @@ mod fixtures {
     pub use pueue_lib::settings::Settings;
     pub use pueue_lib::state::{SharedState, State, PUEUE_DEFAULT_GROUP};
     pub use pueue_lib::task::{Task, TaskResult, TaskStatus};
+
+    // A simple helper struct to keep the boilerplate for TaskStatus creation down.
+    pub enum StubStatus {
+        Queued,
+        Running,
+        Paused,
+        Stashed { enqueue_at: Option<DateTime<Local>> },
+        Done(TaskResult),
+    }
 
     pub fn get_settings() -> (Settings, TempDir) {
         let tempdir = TempDir::new().expect("Failed to create test pueue directory");
@@ -110,7 +133,25 @@ mod fixtures {
     }
 
     /// Create a new task with stub data in the given group
-    pub fn get_stub_task_in_group(id: &str, group: &str, status: TaskStatus) -> Task {
+    pub fn get_stub_task_in_group(id: &str, group: &str, status: StubStatus) -> Task {
+        // Build a proper Task status based on the simplified requested stub status.
+        let enqueued_at = Local::now() - Duration::minutes(5);
+        let start = Local::now() - Duration::minutes(4);
+        let end = Local::now() - Duration::minutes(1);
+
+        let status = match status {
+            StubStatus::Stashed { enqueue_at } => TaskStatus::Stashed { enqueue_at },
+            StubStatus::Queued => TaskStatus::Queued { enqueued_at },
+            StubStatus::Running => TaskStatus::Running { enqueued_at, start },
+            StubStatus::Paused => TaskStatus::Paused { enqueued_at, start },
+            StubStatus::Done(result) => TaskStatus::Done {
+                enqueued_at,
+                start,
+                end,
+                result,
+            },
+        };
+
         Task::new(
             id.to_string(),
             temp_dir(),
@@ -124,7 +165,7 @@ mod fixtures {
     }
 
     /// Create a new task with stub data
-    pub fn get_stub_task(id: &str, status: TaskStatus) -> Task {
+    pub fn get_stub_task(id: &str, status: StubStatus) -> Task {
         get_stub_task_in_group(id, PUEUE_DEFAULT_GROUP, status)
     }
 
@@ -133,23 +174,23 @@ mod fixtures {
         {
             // Queued task
             let mut state = state.lock().unwrap();
-            let task = get_stub_task("0", TaskStatus::Queued);
+            let task = get_stub_task("0", StubStatus::Queued);
             state.add_task(task);
 
             // Finished task
-            let task = get_stub_task("1", TaskStatus::Done(TaskResult::Success));
+            let task = get_stub_task("1", StubStatus::Done(TaskResult::Success));
             state.add_task(task);
 
             // Stashed task
-            let task = get_stub_task("2", TaskStatus::Stashed { enqueue_at: None });
+            let task = get_stub_task("2", StubStatus::Stashed { enqueue_at: None });
             state.add_task(task);
 
             // Running task
-            let task = get_stub_task("3", TaskStatus::Running);
+            let task = get_stub_task("3", StubStatus::Running);
             state.add_task(task);
 
             // Paused task
-            let task = get_stub_task("4", TaskStatus::Paused);
+            let task = get_stub_task("4", StubStatus::Paused);
             state.add_task(task);
         }
 

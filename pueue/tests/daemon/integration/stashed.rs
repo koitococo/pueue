@@ -45,11 +45,6 @@ async fn test_enqueued_tasks(
     // The task should be added in stashed state.
     let task = wait_for_task_condition(shared, 0, |task| task.is_stashed()).await?;
 
-    assert!(
-        task.enqueued_at.is_none(),
-        "Enqueued tasks shouldn't have an enqeued_at date set."
-    );
-
     // Assert the correct point in time has been set, in case `enqueue_at` is specific.
     if enqueue_at.is_some() {
         let status = get_task_status(shared, 0).await?;
@@ -60,11 +55,9 @@ async fn test_enqueued_tasks(
         }
     }
 
-    let pre_enqueue_time = Local::now();
-
     // Manually enqueue the task
     let enqueue_message = EnqueueMessage {
-        task_ids: vec![0],
+        tasks: TaskSelection::TaskIds(vec![0]),
         enqueue_at: None,
     };
     send_message(shared, enqueue_message)
@@ -72,12 +65,7 @@ async fn test_enqueued_tasks(
         .context("Failed to to add task message")?;
 
     // Make sure the task is started after being enqueued
-    let task = wait_for_task_condition(shared, 0, |task| task.is_running()).await?;
-
-    assert!(
-        task.enqueued_at.unwrap() > pre_enqueue_time,
-        "Enqueued tasks should have an enqeued_at time set."
-    );
+    wait_for_task_condition(shared, 0, |task| task.is_running()).await?;
 
     Ok(())
 }
@@ -122,16 +110,18 @@ async fn test_stash_queued_task() -> Result<()> {
     add_task(shared, "sleep 10").await?;
 
     // Stash the task
-    send_message(shared, Message::Stash(vec![0]))
-        .await
-        .context("Failed to send STash message")?;
+    send_message(
+        shared,
+        StashMessage {
+            tasks: TaskSelection::TaskIds(vec![0]),
+            enqueue_at: None,
+        },
+    )
+    .await
+    .context("Failed to send STash message")?;
 
     let task = get_task(shared, 0).await?;
     assert_eq!(task.status, TaskStatus::Stashed { enqueue_at: None });
-    assert!(
-        task.enqueued_at.is_none(),
-        "Enqueued tasks shouldn't have an enqeued_at date set."
-    );
 
     Ok(())
 }

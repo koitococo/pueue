@@ -2,6 +2,7 @@
 #![allow(clippy::empty_docs)]
 
 use anyhow::{bail, Context, Result};
+use chrono::prelude::*;
 use pest::Parser;
 use pest_derive::Parser;
 
@@ -77,11 +78,11 @@ impl QueryResult {
                 fn rank_status(task: &Task) -> u8 {
                     match &task.status {
                         TaskStatus::Stashed { .. } => 0,
-                        TaskStatus::Locked => 1,
-                        TaskStatus::Queued => 2,
-                        TaskStatus::Paused => 3,
-                        TaskStatus::Running => 4,
-                        TaskStatus::Done(result) => match result {
+                        TaskStatus::Locked { .. } => 1,
+                        TaskStatus::Queued { .. } => 2,
+                        TaskStatus::Paused { .. } => 3,
+                        TaskStatus::Running { .. } => 4,
+                        TaskStatus::Done { result, .. } => match result {
                             TaskResult::Success => 6,
                             _ => 5,
                         },
@@ -93,8 +94,34 @@ impl QueryResult {
             Rule::column_label => task1.label.cmp(&task2.label),
             Rule::column_command => task1.command.cmp(&task2.command),
             Rule::column_path => task1.path.cmp(&task2.path),
-            Rule::column_start => task1.start.cmp(&task2.start),
-            Rule::column_end => task1.end.cmp(&task2.end),
+            Rule::column_enqueue_at => {
+                fn enqueue_date(task: &Task) -> DateTime<Local> {
+                    match &task.status {
+                        TaskStatus::Queued { enqueued_at, .. }
+                        | TaskStatus::Running { enqueued_at, .. }
+                        | TaskStatus::Paused { enqueued_at, .. }
+                        | TaskStatus::Done { enqueued_at, .. }
+                        | TaskStatus::Stashed {
+                            enqueue_at: Some(enqueued_at),
+                            ..
+                        } => *enqueued_at,
+                        // considered far in the future when no explicit date:
+                        _ => DateTime::<Utc>::MAX_UTC.into(),
+                    }
+                }
+
+                enqueue_date(task1).cmp(&enqueue_date(task2))
+            }
+            Rule::column_start => {
+                let (start1, _) = task1.start_and_end();
+                let (start2, _) = task2.start_and_end();
+                start1.cmp(&start2)
+            }
+            Rule::column_end => {
+                let (_, end1) = task1.start_and_end();
+                let (_, end2) = task2.start_and_end();
+                end1.cmp(&end2)
+            }
             _ => std::cmp::Ordering::Less,
         });
 
@@ -162,6 +189,7 @@ pub fn apply_query(query: &str, group: &Option<String>) -> Result<QueryResult> {
             Rule::column_selection => column_selection::apply(section, &mut query_result)?,
             Rule::datetime_filter => filters::datetime(section, &mut query_result)?,
             Rule::label_filter => filters::label(section, &mut query_result)?,
+            Rule::command_filter => filters::command(section, &mut query_result)?,
             Rule::status_filter => filters::status(section, &mut query_result)?,
             Rule::order_by_condition => order_by::order_by(section, &mut query_result)?,
             Rule::limit_condition => limit::limit(section, &mut query_result)?,

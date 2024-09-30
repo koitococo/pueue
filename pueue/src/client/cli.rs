@@ -96,10 +96,23 @@ pub enum SubCommand {
     /// You have to enqueue them or start them by hand.
     Stash {
         /// Stash these specific tasks.
-        #[arg(required = true)]
         task_ids: Vec<usize>,
+
+        /// Stash all queued tasks in a group
+        #[arg(short, long, conflicts_with = "all")]
+        group: Option<String>,
+
+        /// Stash all queued tasks across all groups.
+        #[arg(short, long)]
+        all: bool,
+
+        /// Delay enqueuing these tasks until 'delay' elapses. See DELAY FORMAT below.
+        #[arg(name = "delay", short, long, value_parser = parse_delay_until)]
+        delay_until: Option<DateTime<Local>>,
     },
     /// Enqueue stashed tasks. They'll be handled normally afterwards.
+    ///
+    /// Enqueues all stashed task in the default group if no arguments are given.
     #[command(after_help = "DELAY FORMAT:
 
     The --delay argument must be either a number of seconds or a \"date expression\" similar to GNU \
@@ -125,6 +138,14 @@ pub enum SubCommand {
     Enqueue {
         /// Enqueue these specific tasks.
         task_ids: Vec<usize>,
+
+        /// Enqueue all stashed tasks in a group
+        #[arg(short, long, conflicts_with = "all")]
+        group: Option<String>,
+
+        /// Enqueue all stashed tasks across all groups.
+        #[arg(short, long)]
+        all: bool,
 
         /// Delay enqueuing these tasks until 'delay' elapses. See DELAY FORMAT below.
         #[arg(name = "delay", short, long, value_parser = parse_delay_until)]
@@ -315,7 +336,7 @@ where:
   - column := `id | status | command | label | path | enqueue_at | dependencies | start | end`
   - filter := `[filter_column] [filter_op] [filter_value]`
     (note: not all columns support all operators, see \"Filter columns\" below.)
-  - filter_column := `start | end | enqueue_at | status | label`
+  - filter_column := `status | command | label | start | end | enqueue_at`
   - filter_op := `= | != | < | > | %=`
     (`%=` means 'contains', as in the test value is a substring of the column value)
   - order_by := `order_by [column] [order_direction]`
@@ -325,6 +346,12 @@ where:
   - limit_count := a positive integer
 
 Filter columns:
+  - `status` supports the operators `=`, `!=`
+    against test values that are:
+      - strings like `queued`, `stashed`, `paused`, `running`, `success`, `failed`
+  - `command`, `label` support the operators `=`, `!=`, `%=`
+    against test values that are:
+      - strings like `some text`
   - `start`, `end`, `enqueue_at` contain a datetime
     which support the operators `=`, `!=`, `<`, `>`
     against test values that are:
@@ -335,6 +362,8 @@ Filter columns:
 
 Examples:
   - `status=running`
+  - `command%=echo`
+  - `label=mytask`
   - `columns=id,status,command status=running start > 2023-05-2112:03:17 order_by command first 5`
 
 The formal syntax is defined here:

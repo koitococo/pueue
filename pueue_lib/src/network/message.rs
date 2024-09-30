@@ -44,7 +44,7 @@ pub enum Message {
     Add(AddMessage),
     Remove(Vec<usize>),
     Switch(SwitchMessage),
-    Stash(Vec<usize>),
+    Stash(StashMessage),
     Enqueue(EnqueueMessage),
 
     Start(StartMessage),
@@ -150,8 +150,16 @@ pub struct SwitchMessage {
 impl_into_message!(SwitchMessage, Message::Switch);
 
 #[derive(PartialEq, Eq, Clone, Debug, Deserialize, Serialize)]
+pub struct StashMessage {
+    pub tasks: TaskSelection,
+    pub enqueue_at: Option<DateTime<Local>>,
+}
+
+impl_into_message!(StashMessage, Message::Stash);
+
+#[derive(PartialEq, Eq, Clone, Debug, Deserialize, Serialize)]
 pub struct EnqueueMessage {
-    pub task_ids: Vec<usize>,
+    pub tasks: TaskSelection,
     pub enqueue_at: Option<DateTime<Local>>,
 }
 
@@ -296,10 +304,8 @@ impl_into_message!(ResetMessage, Message::Reset);
 
 #[derive(PartialEq, Eq, Clone, Debug, Deserialize, Serialize)]
 pub struct CleanMessage {
-    #[serde(default = "bool::default")]
     pub successful_only: bool,
 
-    #[serde(default = "Option::default")]
     pub group: Option<String>,
 }
 
@@ -342,7 +348,6 @@ impl_into_message!(LogRequestMessage, Message::Log);
 #[derive(PartialEq, Eq, Clone, Deserialize, Serialize)]
 pub struct TaskLogMessage {
     pub task: Task,
-    #[serde(default = "bool::default")]
     /// Indicates whether the log output has been truncated or not.
     pub output_complete: bool,
     pub output: Option<Vec<u8>>,

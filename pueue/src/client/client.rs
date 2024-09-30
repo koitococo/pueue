@@ -5,7 +5,7 @@ use std::{borrow::Cow, collections::HashMap};
 use anyhow::{bail, Context, Result};
 use clap::crate_version;
 use crossterm::tty::IsTty;
-use log::error;
+use log::{error, warn};
 
 use pueue_lib::network::message::*;
 use pueue_lib::network::protocol::*;
@@ -110,7 +110,7 @@ impl Client {
             };
 
             if show_warning {
-                println!(
+                warn!(
                     "Different daemon version detected '{version}'. Consider restarting the daemon."
                 );
             }
@@ -457,7 +457,19 @@ impl Client {
                 }
                 Message::Remove(task_ids.clone())
             }
-            SubCommand::Stash { task_ids } => Message::Stash(task_ids.clone()),
+            SubCommand::Stash {
+                task_ids,
+                group,
+                all,
+                delay_until,
+            } => {
+                let selection = selection_from_params(*all, group, task_ids);
+                StashMessage {
+                    tasks: selection,
+                    enqueue_at: *delay_until,
+                }
+                .into()
+            }
             SubCommand::Switch {
                 task_id_1,
                 task_id_2,
@@ -468,10 +480,15 @@ impl Client {
             .into(),
             SubCommand::Enqueue {
                 task_ids,
+                group,
+                all,
                 delay_until,
-            } => EnqueueMessage {
-                task_ids: task_ids.clone(),
-                enqueue_at: *delay_until,
+            } => {
+                let selection = selection_from_params(*all, group, task_ids);
+                EnqueueMessage {
+                    tasks: selection,
+                    enqueue_at: *delay_until,
+                }
             }
             .into(),
             SubCommand::Start {
