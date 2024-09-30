@@ -55,24 +55,21 @@ pub fn print_state(
 
     if count {
         let status_labels = [
-            "Queued",
-            "Stashed",
-            "Running",
-            "Paused",
-            "Success",
-            "Failed",
-            "Locked",
+            "Queued", "Stashed", "Running", "Paused", "Success", "Failed", "Locked",
         ];
-        let mut counts = [0;7];
+        let mut counts = [0; 7];
         for task in tasks {
             match task.status {
-                TaskStatus::Queued => counts[0] += 1,
-                TaskStatus::Stashed{..} => counts[1] += 1,
-                TaskStatus::Running => counts[2] += 1,
-                TaskStatus::Paused => counts[3] += 1,
-                TaskStatus::Done(TaskResult::Success) => counts[4] += 1,
-                TaskStatus::Done(_) => counts[5] += 1,
-                TaskStatus::Locked => counts[6] += 1
+                TaskStatus::Queued { .. } => counts[0] += 1,
+                TaskStatus::Stashed { .. } => counts[1] += 1,
+                TaskStatus::Running { .. } => counts[2] += 1,
+                TaskStatus::Paused { .. } => counts[3] += 1,
+                TaskStatus::Done {
+                    result: TaskResult::Success,
+                    ..
+                } => counts[4] += 1,
+                TaskStatus::Done { .. } => counts[5] += 1,
+                TaskStatus::Locked { .. } => counts[6] += 1,
             }
         }
         for i in 0..7 {
