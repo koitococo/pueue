@@ -1,8 +1,9 @@
 use std::env::{current_dir, vars};
-use std::io::{self, stdout, Write};
+use std::io::{self, stdin, stdout, Write};
 use std::{borrow::Cow, collections::HashMap};
 
 use anyhow::{bail, Context, Result};
+use base64::Engine;
 use clap::crate_version;
 use crossterm::tty::IsTty;
 use log::{error, warn};
@@ -410,6 +411,8 @@ impl Client {
                 command,
                 working_directory,
                 escape,
+                b64encoded,
+                read_stdin,
                 start_immediately,
                 stashed,
                 group,
@@ -419,24 +422,49 @@ impl Client {
                 label,
                 print_task_id,
             } => {
+                if command.len() < 1 && !*read_stdin {
+                    bail!("No command given. Please provide a command to execute.")
+                }
                 // Either take the user-specified path or default to the current working directory.
                 let path = working_directory
                     .as_ref()
                     .map(|path| Ok(path.clone()))
                     .unwrap_or_else(current_dir)?;
 
-                let mut command = command.clone();
-                // The user can request to escape any special shell characters in all parameter strings before
-                // we concatenated them to a single string.
-                if *escape {
-                    command = command
-                        .iter()
-                        .map(|parameter| shell_escape::escape(Cow::from(parameter)).into_owned())
-                        .collect();
-                }
-
+                let command: String = (if *read_stdin {
+                    stdin()
+                        .lines()
+                        .filter_map(|l| l.ok())
+                        .collect::<Vec<String>>()
+                } else {
+                    command.clone()
+                })
+                .iter()
+                .filter_map(|m| {
+                    if m.len() > 0 {
+                        // The user can request to decode the command from base64 before we send it to the daemon.
+                        let m = if *b64encoded {
+                            let decoded =
+                                base64::engine::general_purpose::URL_SAFE.decode(&m).ok()?;
+                            String::from_utf8(decoded).ok()?
+                        } else {
+                            m.to_string()
+                        };
+                        // The user can request to escape any special shell characters in all parameter strings before
+                        // we concatenated them to a single string.
+                        Some(if *escape {
+                            shell_escape::escape(Cow::from(m)).into_owned()
+                        } else {
+                            m
+                        })
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<String>>()
+                .join(" ");
                 AddMessage {
-                    command: command.join(" "),
+                    command,
                     path,
                     // Catch the current environment for later injection into the task's process.
                     envs: HashMap::from_iter(vars()),

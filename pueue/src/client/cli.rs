@@ -24,7 +24,7 @@ pub enum SubCommand {
     )]
     Add {
         /// The command to be added.
-        #[arg(required = true, num_args(1..), value_hint = ValueHint::CommandWithArguments)]
+        #[arg(required = false, num_args(1..), value_hint = ValueHint::CommandWithArguments)]
         command: Vec<String>,
 
         /// Specify current working directory.
@@ -35,6 +35,14 @@ pub enum SubCommand {
         /// Beware: This implicitly disables nearly all shell specific syntax ("&&", "&>").
         #[arg(short, long)]
         escape: bool,
+
+        /// Indicates that the command is encoded in base64.
+        #[arg(short, long)]
+        b64encoded: bool,
+
+        /// Read command from stdin
+        #[arg(short, long)]
+        read_stdin: bool,
 
         /// Immediately start the task.
         #[arg(name = "immediate", short, long, conflicts_with = "stashed")]

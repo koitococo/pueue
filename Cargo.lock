@@ -1250,6 +1250,7 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "assert_matches",
+ "base64",
  "better-panic",
  "chrono",
  "clap",
