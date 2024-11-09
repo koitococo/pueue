@@ -9,7 +9,7 @@ resolver = "2"
 authors = ["Arne Beer <contact@arne.beer>"]
 homepage = "https://github.com/nukesor/pueue"
 repository = "https://github.com/nukesor/pueue"
-license = "MIT"
+license = "MIT OR APACHE-2.0"
 edition = "2021"
 rust-version = "1.70"
 
@@ -23,8 +23,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
 snap = "1.1"
-strum = "0.26"
-strum_macros = "0.26"
+strum = { version = "0.26", features = ["derive"] }
 tokio = { version = "1.36", features = ["rt-multi-thread", "time", "io-std"] }
 handlebars = "5.1"
 anyhow = "1"
